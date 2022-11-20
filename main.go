@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"gotrading/bitflyer"
 	"gotrading/config"
 	"gotrading/utils"
-	"log"
 )
 
 /*
@@ -16,7 +16,6 @@ go install golang.org/x/tools/gopls@latest
 
 func main() {
 	utils.LoggingSettings(config.Config.LogFile)
-	log.Println("test")
-	fmt.Println(config.Config.ApiKey)
-	fmt.Println(config.Config.ApiSecret)
+	apiClient := bitflyer.New(config.Config.ApiKey, config.Config.ApiSecret)
+	fmt.Println(apiClient.GetBalance())//ポインタのメソッド
 }
