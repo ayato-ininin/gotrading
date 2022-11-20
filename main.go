@@ -18,7 +18,7 @@ https://qiita.com/sasaron397/items/ec285b64607c1e7662e0
 "gopls": { "experimentalWorkspaceModule": true}
 */
 
-func main()  {
+func main() {
 	utils.LoggingSettings(config.Config.LogFile)
 	log.Println("test")
 	fmt.Println(config.Config.ApiKey)
