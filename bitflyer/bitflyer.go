@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const baseURL = "https://api.bitflyer.com/v1/"
@@ -218,4 +220,96 @@ func (api *APIClient) GetTicker(productCode string) (*Ticker, error){
 		return nil, err
 	}
 	return &ticker, nil
+}
+
+/*
+JSON-RPC は、 JSON を媒体とした Remote Procedure Call です。
+JSON形式でリクエスト＆レスポンスを表現するシンプルな仕様
+RPCとRESTはAPIを構築するための異なるアーキテクチャ・スタイル。
+APIは、アプリケーションが互いに通信・インタラクションできるようにするための規則と定義をもたらし、あるアプリケーションが別のアプリケーションに対して行うことができる呼び出しや要求の種類、その要求の実行法、使用されるデータ形式、及びクライアントが従わなければならない規約を定義
+https://qiita.com/il-m-yamagishi/items/8709de06be33e7051fd2
+URLで何をするか判断する。
+DELETE /user/id=1
+↓
+POST /user_delete/id=1
+postするだけでもう消える。
+*/
+type JsonRPC2 struct {
+	Version string      `json:"jsonrpc"` //2.0
+	Method  string      `json:"method"` //subscribe等
+	Params  interface{} `json:"params"`
+	Result  interface{} `json:"result,omitempty"`
+	Id      *int        `json:"id,omitempty"`
+}
+
+// bitflyerのJSON-RPCプロトコルが、名前付き引数("channel")での利用を想定して設計されているため、別途typeを定義
+type SubscribeParams struct {
+	Channel string `json:"channel"`
+}
+
+/*
+JSON-RPC 2.0 over WebSocket
+websocktは、双方向通信のための仕組みで、
+HTTPだとリアルタイム性を実現できない理由としては、
+①クライアントからしかリクエスト送れない、サーバからの通信ができない。
+②一つのコネクションで一つのリクエストなので、通信効率が悪い。
+→websocketは一度ハンドシェイクすると、そのコネクションを使える。
+流れとしては、upgradeヘッダを含むGETリクエストを送信し、まずHTTPハンドシェイクから、websocket通信に切り替え。
+プロトコルを HTTP から WebSocket にアップグレード
+*/
+func (api *APIClient) GetRealTimeTicker(symbol string, ch chan<- Ticker) {
+	u := url.URL{Scheme: "wss", Host: "ws.lightstream.bitflyer.com", Path: "/json-rpc"}
+	log.Printf("connecting to %s", u.String())
+
+	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)//websocket接続
+	if err != nil {
+		log.Fatal("dial:", err)
+	}
+	defer c.Close() //接続を切る
+
+	//lightning_ticker_BTC_USDが入る、fmt.Sprintfは整形してstringを返す
+	channel := fmt.Sprintf("lightning_ticker_%s", symbol)
+	//購読開始、JSONで送信
+	if err := c.WriteJSON(&JsonRPC2{Version: "2.0", Method: "subscribe", Params: &SubscribeParams{channel}}); err != nil {
+		log.Fatal("subscribe:", err)
+		return
+	}
+
+	/*
+	ラベル付きの for は同一コードで何回も重ねられた（ネスト）for文で、抜け出す機能。
+	continue OUTERとbreak OUTERは違うくて、continueだと、for文１からやり直し。
+	breakだと、for文を完全に抜ける。
+	*/
+	OUTER:
+		for {
+			message := new(JsonRPC2)
+			//おそらくwebsocketでwritejsonをすることで、readjsonにどんどんデータが流れてくる。それを一旦jsonRPC2の構造体にいれる感じか。JSON形式の受信
+			if err := c.ReadJSON(message); err != nil {
+				log.Println("read:", err)
+				return
+			}
+
+			if message.Method == "channelMessage" {
+				//map[string]interface{}の型かチェック
+				switch v := message.Params.(type) {
+				case map[string]interface{}:
+					for key, binary := range v {
+						//１つ目の配列は、keyがchannelなので省く
+						if key == "message" {
+							//構造体をJSONにできるかチェック
+							marshaTic, err := json.Marshal(binary)
+							if err == nil {
+								continue OUTER
+							}
+							var ticker Ticker
+							//JSONを構造体にして、可能であればchannelへ送信
+							if err := json.Unmarshal(marshaTic, &ticker); err != nil {
+								continue OUTER
+							}
+							ch <- ticker
+						}
+					}
+				}
+			}
+		}
 }
