@@ -136,3 +136,86 @@ func (api *APIClient) GetBalance() ([]Balance, error){
 	}
 	return balance, nil
 }
+
+
+/*
+https://mholt.github.io/json-to-go/
+上記で、jsonをgoの構造体に変えてくれる
+apiのレスポンスがドキュメントにあるなら、簡単に対応する構造体が作れる。
+*/
+type Ticker struct {
+	ProductCode     string  `json:"product_code"`
+	State           string  `json:"state"`
+	Timestamp       string  `json:"timestamp"`
+	TickID          int     `json:"tick_id"`
+	BestBid         float64     `json:"best_bid"`
+	BestAsk         float64     `json:"best_ask"`
+	BestBidSize     float64 `json:"best_bid_size"`
+	BestAskSize     float64     `json:"best_ask_size"`
+	TotalBidDepth   float64 `json:"total_bid_depth"`
+	TotalAskDepth   float64     `json:"total_ask_depth"`
+	MarketBidSize   float64     `json:"market_bid_size"`
+	MarketAskSize   float64     `json:"market_ask_size"`
+	Ltp             float64     `json:"ltp"`
+	Volume          float64 `json:"volume"`
+	VolumeByProduct float64 `json:"volume_by_product"`
+}
+
+//売りと買いの中間の値を取得
+func (t *Ticker) GetMidPrice() float64{
+	return (t.BestBidSize + float64(t.BestAsk)) / 2
+}
+
+/*
+APIから帰ってきたTimestampをデータに入れるとき、
+対応しているtimestampに変える必要があるので、そのメソッド
+
+ちなみに、pubnubからの返り値じゃないと、
+2022-11-23T01:00:38.947(/tickerから返ってくるtimestamp)
+これにゾーン情報がないからParseエラーになる。
+*/
+func (t *Ticker) DateTime() time.Time{
+	dateTime, err := time.Parse(time.RFC3339, t.Timestamp)
+	if err != nil {
+		log.Printf("action=DateTime, err=%s", err.Error())
+	}
+	return dateTime
+}
+
+/*
+dataTimeでParseしたタイムスタンプに対し、
+Time型にはTruncateメソッドが用意されていて、指定した大きさ以下の時刻を切り捨てる。
+https://pkg.go.dev/time#Duration.Truncate
+	trunc := []time.Duration{
+		time.Nanosecond,
+		time.Microsecond,
+		time.Millisecond,
+		time.Second,
+		2 * time.Second,
+		time.Minute,
+		10 * time.Minute,
+		time.Hour,
+	}
+hourにしたら、12:10:12→12:00:00になる。
+*/
+func (t *Ticker) TruncateDateTime(duration time.Duration)  time.Time{
+	return t.DateTime().Truncate(duration)
+}
+
+/*
+getbalanceから汎用的に使う。
+doRequestに送るとき、product_codeはbodyではなく、クエリパラメータとして追加
+*/
+func (api *APIClient) GetTicker(productCode string) (*Ticker, error){
+	url:= "ticker"
+	resp,err := api.doRequest("GET", url,map[string]string{"product_code":productCode},nil)
+	if err != nil{
+		return nil, err
+	}
+	var ticker Ticker
+	err = json.Unmarshal(resp,&ticker)//jsonを構造体に変換してくれる
+	if err != nil {
+		return nil, err
+	}
+	return &ticker, nil
+}
