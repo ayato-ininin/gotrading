@@ -20,4 +20,5 @@ go install golang.org/x/tools/gopls@latest
 func main() {
 	utils.LoggingSettings(config.Config.LogFile)
 	controllers.StreamIngestionData()
+	controllers.StartWebServer()
 }
