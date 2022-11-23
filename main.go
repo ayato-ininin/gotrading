@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"gotrading/app/models"
+	_ "fmt"
+	"gotrading/app/controllers"
+	_ "gotrading/app/models"
 	_ "gotrading/bitflyer"
 	"gotrading/config"
 	"gotrading/utils"
@@ -18,5 +19,5 @@ go install golang.org/x/tools/gopls@latest
 
 func main() {
 	utils.LoggingSettings(config.Config.LogFile)
-	fmt.Println(models.DbConnection)//初期化
+	controllers.StreamIngestionData()
 }
