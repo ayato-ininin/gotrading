@@ -296,7 +296,7 @@ func (api *APIClient) GetRealTimeTicker(symbol string, ch chan<- Ticker) {
 					for key, binary := range v {
 						//１つ目の配列は、keyがchannelなので省く
 						if key == "message" {
-							//構造体をJSONにできるかチェック
+							//構造体をJSONにできるかチェック(エンコード,バイト配列でreturn)
 							marshaTic, err := json.Marshal(binary)
 							if err == nil {
 								continue OUTER
